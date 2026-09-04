@@ -24,39 +24,36 @@ Render 見える世界
 LLM    次トークン予測のまま。アルゴリズムは変えない
 ```
 
-α は法律ではない。Gate は生成文を α と照合しない。
-
-閉じた Δ 語: 課題 / 改善点 / 結論 / 立場 / 状態  
-未知語は `adopt_word` するまで書けない。
-
 ---
 
 ## 動かす
 
 ```bash
 python3 -m unittest test_axiom_min3.py
-python3 phase3_gamma_history.py
+python3 phase3_prototype.py
 python3 capsule_scope_experiment.py
 ```
+
+作業線 `axiom_min3.py` と `test_axiom_min3.py` は、51/51 を通したプロトタイプ核である。
+本リポに未配置の場合は、検証済み zip（`Capsule-min3-IS-pin.zip`）から同名ファイルを根に置く。
 
 | ファイル | 役割 |
 |----------|------|
 | `axiom_min.py` | 金型。触らない |
-| `axiom_min3.py` | 作業線。γ = time + project + topic |
+| `axiom_min3.py` | 作業線 |
 | `test_axiom_min3.py` | 単体 51/51 |
-| `phase3_gamma_history.py` | 同一 Δ 山の比較（min2 同梱） |
-| `capsule_scope_experiment.py` | 混在山を γ で切る機械実験 |
+| `phase3_prototype.py` | Baseline と min3 Render の機械比較 |
+| `capsule_scope_experiment.py` | 混在山を γ で切る |
 | `AXIOM_IS_Pin_Note.md` | IS ピンの測定記録 |
+| `PROTOTYPE.md` | 凍結ルール |
 
 ---
 
 ## このプロトタイプで入れた閉じた政策
 
-1. IS は語ごとに上書きする。同じ語の旧行はスロットを食わない。
+1. IS は語ごとに上書きする。
 2. 4語目が来たら、ピン以外の最古を落とす。ピンは `状態`。
 3. `ingest` の `evicted` は監査。記憶層ではない。
-
-IS_MAX=3 は据え置き。Render は IS だけ。Δ を見える世界に混ぜない。
 
 ---
 
@@ -66,4 +63,3 @@ IS_MAX=3 は据え置き。Render は IS だけ。Δ を見える世界に混ぜ
 - 履歴ありの F
 - ハルシネーション全般
 - α が法律として強制されること
-- カーネル配置
