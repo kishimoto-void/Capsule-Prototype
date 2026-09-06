@@ -53,7 +53,9 @@ python3 runtime.py
 
 Runtime の生成器は `Callable[[str], str]`。既定は stub。API は足していない。  
 bind した γ 以外の packet は commit しない。推論埋めは Capsule に書かない。  
-Hash-A が壊れていれば生成器を呼ばない。修復しない。
+Hash-A が壊れていれば生成器を呼ばない。修復しない。  
+Runtime の書き込みは identity だけでは足りない。`authorize=True` が人間の印。生成は権限ではない。
+
 
 ---
 

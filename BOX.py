@@ -584,7 +584,10 @@ class BOX:
                 "not": "1+1=2 の完成形を一つの答えとして出すこと",
                 "method": list(METHOD),
                 "steps": METHOD_STEPS,
-                "rule": "start と goal は所与。間の ? は仮組み。本組は閉じた packet だけ。完成した和を書くな。住所を広げるな。Capsule に書き戻すな。",
+                "rule": "start と goal は所与。間の ? は仮組み。本組は閉じた packet だけ。完成した和を書くな。住所を広げるな。Capsule に書き戻すな。責任は人間。生成は権限ではない。",
+                "owner": "human",
+                "liable": "human",
+                "generation_is_not_authority": True,
                 "dual": {
                     "kari": "仮組み。taio と seigo。各軸は plus/minus/cite。cite は cites から取る。",
                     "hon": "本組。閉じた packet + kernel/state/address 根拠 + jitsuyo（toward/not/cite）。cite は address。向きは状態ではない。",

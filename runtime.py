@@ -8,8 +8,9 @@ Capsule holds sealed state. BOX handles it. Runtime only routes a turn.
     pull    render + incomplete frame. does not write
     infer   call a generator. Runtime does not complete the frame
     propose parse only
-    commit  BOX.commit only. identity required. bound γ only
+    commit  BOX.commit only. identity + authorize. bound γ only
     Hash-A  asserted before and after every turn. never written here
+    owner   always human. generation is not authority
 """
 from __future__ import annotations
 
@@ -20,6 +21,47 @@ from axiom_min3 import BetaFact, Write, parse_packet
 from BOX import BOX, Frame
 
 Generator = Callable[[str], str]
+OWNER = "human"
+RESPONSIBILITY = {
+    "owner": OWNER,
+    "liable": OWNER,
+    "machine_may_write": False,
+    "machine_may_repair": False,
+    "generation_is_not_authority": True,
+}
+
+
+def boundary(
+    *,
+    intact: bool,
+    bound: bool,
+    identity: bool,
+    authorize: bool,
+    hon_ready: bool = False,
+    kari: bool = False,
+    pending: Any = None,
+    reason: str = "",
+) -> dict:
+    """Readable cut. Not a score. Human reads this before taking the write."""
+    gates = {
+        "intact": intact,
+        "bound_gamma": bound,
+        "identity": identity,
+        "authorize": authorize,
+        "hon_ready": hon_ready,
+    }
+    return {
+        **RESPONSIBILITY,
+        "gates": gates,
+        "open": [name for name, ok in gates.items() if not ok],
+        "closed": [name for name, ok in gates.items() if ok],
+        "not_state": ["kari", "jitsuyo", "inference", "free_text"],
+        "pending": pending if pending is not None else None,
+        "kari_kept": bool(kari),
+        "reason": reason,
+        "can_write": all((intact, bound, identity, authorize)) and (hon_ready or pending is not None),
+    }
+
 
 
 def stub_generator(prompt: str) -> str:
@@ -195,7 +237,7 @@ class Runtime:
             out["reason"] = "gamma_mismatch"
         return out
 
-    def commit(self, raw: Any = None, identity: Optional[float] = None, human: bool = False) -> dict:
+    def commit(self, raw: Any = None, identity: Optional[float] = None, human: bool = False, authorize: bool = False) -> dict:
         frozen_a = self.hash_a()
         src = raw if raw is not None else self.box.proposal
         kind = classify(src)
@@ -207,7 +249,21 @@ class Runtime:
             out["hash_a_before"] = frozen_a
             out["hash_a_after"] = self.hash_a()
             out["hash_a_moved"] = self.hash_a() != frozen_a
+            out["boundary"] = boundary(intact=self.intact(), bound=bool(self.filt), identity=False, authorize=authorize, pending=parse_packet(src), reason="identity_required")
             return out
+        if not authorize:
+            return {
+                "ok": False,
+                "reason": "human_required",
+                "kind": kind,
+                "write": Write.NONE,
+                "committed": False,
+                "hash_a_before": frozen_a,
+                "hash_a_after": self.hash_a(),
+                "hash_a_moved": False,
+                "hash_a_intact": self.intact(),
+                "boundary": boundary(intact=self.intact(), bound=bool(self.filt), identity=True, authorize=False, pending=parse_packet(src), reason="human_required"),
+            }
         if kind == "packet":
             pkt = parse_packet(src)
             if pkt is not None and not gamma_matches_bind(pkt, self.filt):
@@ -233,6 +289,15 @@ class Runtime:
         out["hash_a_moved"] = self.hash_a() != frozen_a
         if self.hash_a() != frozen_a:
             raise RuntimeError("Hash-A moved on Runtime.commit")
+        out["boundary"] = boundary(
+            intact=self.intact(),
+            bound=True,
+            identity=True,
+            authorize=True,
+            hon_ready=True,
+            pending=None if out.get("committed") else parse_packet(src),
+            reason="" if out.get("committed") else out.get("reason", ""),
+        )
         return out
 
     def accept_inference(self, frame: Frame, filled: Any) -> dict:
@@ -257,11 +322,12 @@ class Runtime:
         generate: bool = True,
         start=None,
         goal=None,
+        authorize: bool = False,
     ) -> dict:
-        """One path: bind-world → infer → propose → accept/reject → optional commit.
+        """One path: bind-world → infer → propose → accept/reject → human commit.
 
         Hash-A is snapshotted at entry and asserted at exit.
-        kari never writes. hon writes only as a closed packet through commit.
+        kari never writes. hon writes only when a human authorizes.
         """
         frozen_a = self.hash_a()
         frozen_b = self.hash_b()
@@ -280,6 +346,13 @@ class Runtime:
                 "hash_a_moved": self.hash_a() != frozen_a,
                 "hash_a_intact": self.intact(),
                 "hash_b_moved": self.hash_b() != frozen_b,
+                "boundary": boundary(
+                    intact=False,
+                    bound=bool(self.filt),
+                    identity=identity is not None,
+                    authorize=authorize,
+                    reason=pulled["reason"],
+                ),
             }
             self.last = out
             return out
@@ -298,9 +371,9 @@ class Runtime:
             if accepted and accepted.get("hon_ready") and hon is not None:
                 proposed = self.propose(hon)
                 if proposed.get("ok") and identity is not None:
-                    committed = self.commit(hon, identity=identity, human=human)
+                    committed = self.commit(hon, identity=identity, human=human, authorize=authorize)
                 elif identity is None:
-                    committed = self.commit(hon, identity=None, human=human)
+                    committed = self.commit(hon, identity=None, human=human, authorize=authorize)
                 else:
                     committed = {
                         "ok": False,
@@ -316,9 +389,9 @@ class Runtime:
                     "committed": False,
                 }
         elif proposed.get("ok") and identity is not None:
-            committed = self.commit(raw, identity=identity, human=human)
+            committed = self.commit(raw, identity=identity, human=human, authorize=authorize)
         elif kind == "packet" and identity is None:
-            committed = self.commit(raw, identity=None, human=human)
+            committed = self.commit(raw, identity=None, human=human, authorize=authorize)
         elif kind == "packet" and proposed.get("reason") == "gamma_mismatch":
             committed = {
                 "ok": False,
@@ -354,6 +427,16 @@ class Runtime:
             "hash_a_moved": False,
             "hash_a_intact": self.intact(),
             "hash_b_moved": self.hash_b() != frozen_b,
+            "boundary": (committed or {}).get("boundary") or boundary(
+                intact=self.intact(),
+                bound=bool(self.filt) and proposed.get("reason") != "gamma_mismatch",
+                identity=identity is not None,
+                authorize=authorize,
+                hon_ready=bool((accepted or {}).get("hon_ready")),
+                kari=bool((accepted or {}).get("kari")),
+                pending=(accepted or {}).get("hon") or proposed.get("packet"),
+                reason=(committed or accepted or proposed).get("reason", ""),
+            ),
         }
         if accepted is not None:
             out["reason"] = accepted.get("reason") or out["reason"]
@@ -376,7 +459,7 @@ def demo() -> None:
         "delta": [{"field": "状態", "new_value": "試作2"}],
         "is": [{"field": "状態", "value": "試作2"}],
     }
-    print("turn packet", rt.turn("状態を残す", raw=pkt, identity=1.0)["write"], "A", rt.hash_a()[:16])
+    print("turn packet", rt.turn("状態を残す", raw=pkt, identity=1.0, authorize=True)["write"], "A", rt.hash_a()[:16])
     print(rt.box.render("今どの辺だ？", rt.filt))
 
 

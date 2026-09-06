@@ -113,7 +113,7 @@ class TestJitsuyo(unittest.TestCase):
         self.assertFalse(blocked["committed"])
         self.assertEqual(blocked["commit"]["reason"], "jitsuyo_required")
         self.assertEqual(self.box.cap.is_lines(FILT), [])
-        out = rt.turn("状態を残す", raw=_dual(JITSUYO), identity=1.0)
+        out = rt.turn("状態を残す", raw=_dual(JITSUYO), identity=1.0, authorize=True)
         self.assertTrue(out["committed"])
         self.assertEqual(out["write"], Write.IS)
         self.assertEqual(self.box.cap.is_lines(FILT), ["状態=試作2"])

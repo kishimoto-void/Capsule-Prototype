@@ -27,7 +27,10 @@ start + 仮組み(?) = goal     非保存
 本組                         閉じた packet だけ commit 可
 ```
 
-仮組みは状態にならない。本組も identity と bound γ と根拠3本を通らなければ書かない。
+仮組みは状態にならない。本組も identity と人間の authorize と bound γ と根拠3本を通らなければ書かない。
+
+生成は権限ではない。責任は常に人間。`boundary.owner = human`
+
 
 仮組みに求めるもの: 事実軸 2 本（対応 / 整合）。cite は Frame の既知だけ
 本組に求めるもの: 閉じた packet + kernel / state / address の根拠 + 実用の向き（address を向く）
