@@ -56,6 +56,8 @@ def classify(raw: Any) -> str:
     obj = _as_dict(raw)
     if obj is None:
         return "free_text"
+    if "kari" in obj or "hon" in obj:
+        return "dual"
     keys = set(obj)
     if keys & {"Q", "V", "K", "gap", "analogy", "interpretation", "inference", "response"}:
         return "inference"
@@ -119,7 +121,7 @@ class Runtime:
         self.last = out
         return out
 
-    def pull(self, user: str, desk: str = "situation") -> dict:
+    def pull(self, user: str, desk: str = "situation", start=None, goal=None) -> dict:
         """Visible world + incomplete frame. Generation is not started here."""
         frozen_a = self.hash_a()
         frozen_b = self.hash_b()
@@ -139,7 +141,7 @@ class Runtime:
             self.last = out
             return out
         world = self.box.render(user, self.filt)
-        frame = self.box.generate_frame(self.filt, desk=desk)
+        frame = self.box.generate_frame(self.filt, desk=desk, start=start, goal=goal)
         prompt = self.box.infer_prompt(frame)
         out = {
             "ok": True,
@@ -253,14 +255,17 @@ class Runtime:
         human: bool = False,
         desk: str = "situation",
         generate: bool = True,
+        start=None,
+        goal=None,
     ) -> dict:
         """One path: bind-world → infer → propose → accept/reject → optional commit.
 
         Hash-A is snapshotted at entry and asserted at exit.
+        kari never writes. hon writes only as a closed packet through commit.
         """
         frozen_a = self.hash_a()
         frozen_b = self.hash_b()
-        pulled = self.pull(user, desk=desk)
+        pulled = self.pull(user, desk=desk, start=start, goal=goal)
         if not pulled["ok"]:
             out = {
                 "ok": False,
@@ -287,8 +292,22 @@ class Runtime:
         proposed = self.propose(raw)
         accepted = None
         committed = None
-        if kind in {"inference", "finished"}:
+        if kind in {"inference", "finished", "dual"}:
             accepted = self.accept_inference(pulled["frame"], raw)
+            hon = accepted.get("hon") if accepted else None
+            if hon is not None:
+                proposed = self.propose(hon)
+                if proposed.get("ok") and identity is not None:
+                    committed = self.commit(hon, identity=identity, human=human)
+                elif identity is None:
+                    committed = self.commit(hon, identity=None, human=human)
+                else:
+                    committed = {
+                        "ok": False,
+                        "reason": proposed.get("reason") or "not_packet",
+                        "write": Write.NONE,
+                        "committed": False,
+                    }
         elif proposed.get("ok") and identity is not None:
             committed = self.commit(raw, identity=identity, human=human)
         elif kind == "packet" and identity is None:
@@ -318,6 +337,8 @@ class Runtime:
             "propose": proposed,
             "accepted": accepted,
             "commit": committed,
+            "kari": (accepted or {}).get("kari") if accepted else None,
+            "hon": (accepted or {}).get("hon") if accepted else None,
             "committed": bool((committed or {}).get("committed")),
             "wrote": bool((committed or {}).get("committed")) or bool((accepted or {}).get("wrote")),
             "write": (committed or {}).get("write", Write.NONE),

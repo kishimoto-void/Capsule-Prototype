@@ -6,8 +6,10 @@ Capsule = what is sealed. BOX = how it is handled now.
 
     Hash-A  Capsule.Inner (αβ + facts)
     Hash-B  Capsule.hash_b() — integrity of Δ/IS/pending. not sealed into A
-    Frame   incomplete problem JSON for an LLM. BOX does not fill open_slots
+    Frame   incomplete problem JSON. start and goal are given. middle stays free
     write   generate_frame does not write Capsule
+    kari    provisional middle. never state
+    hon     closed packet candidate. BOX does not auto-commit it
 """
 from __future__ import annotations
 
@@ -49,12 +51,15 @@ METHOD = (
 METHOD_STEPS = {
     "seal": "Hash-A と closed の αβ だけを真と見る。核は作らない。",
     "desk": "closed に無い γΔIS は無い。住所を広げない。",
-    "start_goal": "start と goal は与える。1+1=2 のような完成形は出さない。1+?=goal の ? だけ埋める。",
+    "start_goal": "start と goal は与える。間の ? は仮組み。1+1=2 の完成形は出さない。",
     "analogy": "source は start / closed から取る。onto は gap。未知の住所へ写さない。",
     "minus": "先に引く。goal に届かせないもの、写してはいけない対応を minus に書く。",
     "plus": "引けてから ? を足す。minus と矛盾する plus は書かない。",
-    "stop": "完成した答えを書かない。Capsule に書き戻さない。gap と analogy だけ出す。",
+    "stop": "完成した一つの答えに畳まない。仮組みは書かない。本組だけ閉じた packet にする。",
 }
+
+
+FORM = "start + ? = goal"
 
 
 def analogy_blank() -> dict:
@@ -63,6 +68,19 @@ def analogy_blank() -> dict:
 
 def gap_blank() -> dict:
     return {"plus": None, "minus": None}
+
+
+def kari_blank() -> dict:
+    return {"gap": gap_blank(), "analogy": analogy_blank(), "note": None}
+
+
+def split_dual(filled: Any) -> tuple[Any, Any]:
+    """Outer {kari, hon} is dual. Legacy fills are kari only."""
+    if not isinstance(filled, dict):
+        return filled, None
+    if "kari" in filled or "hon" in filled:
+        return filled.get("kari"), filled.get("hon")
+    return filled, None
 
 
 def as_analogy(value: Any) -> Optional[dict]:
@@ -102,6 +120,9 @@ class Frame:
     start: Any = None
     goal: Any = None
     gap: dict = field(default_factory=dict)
+    kari: dict = field(default_factory=dict)
+    hon: Any = None
+    form: str = FORM
     hash_a: str = ""
     hash_b: str = ""
     intact: bool = True
@@ -118,9 +139,12 @@ class Frame:
             "desk": self.desk,
             "qvk": dict(self.qvk),
             "analogy": dict(self.analogy) if self.analogy else analogy_blank(),
+            "form": self.form or FORM,
             "start": self.start,
             "goal": self.goal,
             "gap": dict(self.gap) if self.gap else gap_blank(),
+            "kari": dict(self.kari) if self.kari else kari_blank(),
+            "hon": self.hon,
             "method": list(METHOD),
             "hash_a": self.hash_a,
             "hash_b": self.hash_b,
@@ -260,9 +284,12 @@ class BOX:
         omit: Optional[list] = None,
         exact: bool = True,
         grain: str = "month",
+        start: Any = None,
+        goal: Any = None,
     ) -> Frame:
         """Build an incomplete frame. Does not write Capsule. Does not answer.
 
+        start and goal are given. middle stays blank (kari). hon is not filled here.
         desk / include / omit subtract materials. open_slots subtract freedom.
         """
         if include is not None:
@@ -312,6 +339,8 @@ class BOX:
             why = gamma_line(dict(filt or {}))
         else:
             why = None
+        start_val = start if start is not None else {"is": sit["is"], "delta": sit["delta"] if "delta" in used else []}
+        goal_val = goal if goal is not None else why
         return Frame(
             purpose=why,
             constraints=constraints,
@@ -323,9 +352,12 @@ class BOX:
             desk=desk_name,
             qvk=qvk,
             analogy=analogy_blank(),
-            start={"is": sit["is"], "delta": sit["delta"] if "delta" in used else []},
-            goal=why,
+            start=start_val,
+            goal=goal_val,
             gap=gap_blank(),
+            kari=kari_blank(),
+            hon=None,
+            form=FORM,
             hash_a=self.hash_a(),
             hash_b=self.hash_b(),
             intact=inn.intact(),
@@ -345,11 +377,15 @@ class BOX:
         return json.dumps(
             {
                 "task": "fill_gap",
-                "form": "start + ? = goal",
-                "not": "1+1=2 の完成形を出すこと",
+                "form": frame.form or FORM,
+                "not": "1+1=2 の完成形を一つの答えとして出すこと",
                 "method": list(METHOD),
                 "steps": METHOD_STEPS,
-                "rule": "start と goal は所与。? だけを analogy と plus/minus で埋めよ。完成した和を書くな。住所を広げるな。Capsule に書き戻すな。",
+                "rule": "start と goal は所与。間の ? は仮組み。本組は閉じた packet だけ。完成した和を書くな。住所を広げるな。Capsule に書き戻すな。",
+                "dual": {
+                    "kari": "仮組み。gap / analogy / open_slots だけ。状態ではない。",
+                    "hon": "本組。閉じた {gamma, delta, is} だけ。identity 無しでは書かない。",
+                },
                 "plus": "start から goal へ足すもの",
                 "minus": "start から goal へ引くもの・写してはいけないもの",
                 "analogy": "start / closed の既知を gap へ写す。onto は gap か open_slots。",
@@ -360,6 +396,8 @@ class BOX:
                 "goal": frame.goal,
                 "blank": blank,
                 "gap": frame.gap or gap_blank(),
+                "kari_blank": frame.kari or kari_blank(),
+                "hon": None,
                 "analogy_blank": frame.analogy or analogy_blank(),
                 "frame": frame.to_dict(),
             },
@@ -369,44 +407,72 @@ class BOX:
         )
 
     def accept_inference(self, frame: Frame, filled: Any) -> dict:
-        """Take plus/minus fills as a proposal. Does not commit to Capsule."""
+        """Take plus/minus fills as 仮組み. Optional 本組 packet is parsed only.
+
+        Does not commit to Capsule. hon is a candidate, not a write.
+        """
         if isinstance(filled, str):
             try:
                 filled = json.loads(filled)
             except json.JSONDecodeError:
-                return {"ok": False, "reason": "bad_inference", "qvk": dict(frame.qvk)}
+                return {"ok": False, "reason": "bad_inference", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None}
         if not isinstance(filled, dict):
-            return {"ok": False, "reason": "bad_inference", "qvk": dict(frame.qvk)}
+            return {"ok": False, "reason": "bad_inference", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None}
+        kari_raw, hon_raw = split_dual(filled)
+        hon = parse_packet(hon_raw) if hon_raw is not None else None
+        hon_reason = ""
+        if hon_raw is not None and hon is None:
+            hon_reason = "hon_not_packet"
+        if kari_raw is None and hon is None and hon_raw is None:
+            return {"ok": False, "reason": "empty", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None}
         allowed = set(frame.open_slots) | set(frame.qvk) | {"gap"}
         accepted = {}
         malformed = []
-        for k in allowed:
-            if k not in filled or filled[k] is None:
-                continue
-            pair = as_pm(filled[k])
-            if pair is None:
-                malformed.append(k)
-                continue
-            accepted[k] = pair
         analogy = None
-        if "analogy" in filled and filled["analogy"] is not None:
-            analogy = as_analogy(filled["analogy"])
-            if analogy is None:
-                malformed.append("analogy")
-            elif analogy.get("onto") not in (None, "") and analogy.get("onto") not in allowed:
-                malformed.append("analogy")
-                analogy = None
-        rejected = [k for k in filled if k not in allowed and k != "analogy"]
-        ok = (bool(accepted) or analogy is not None) and not malformed
+        rejected = []
+        if isinstance(kari_raw, dict):
+            for k in allowed:
+                if k not in kari_raw or kari_raw[k] is None:
+                    continue
+                pair = as_pm(kari_raw[k])
+                if pair is None:
+                    malformed.append(k)
+                    continue
+                accepted[k] = pair
+            if "analogy" in kari_raw and kari_raw["analogy"] is not None:
+                analogy = as_analogy(kari_raw["analogy"])
+                if analogy is None:
+                    malformed.append("analogy")
+                elif analogy.get("onto") not in (None, "") and analogy.get("onto") not in allowed:
+                    malformed.append("analogy")
+                    analogy = None
+            rejected = [k for k in kari_raw if k not in allowed and k not in {"analogy", "note"}]
+        elif kari_raw is not None:
+            malformed.append("kari")
+        if not isinstance(filled.get("kari"), dict) and "kari" not in filled and "hon" not in filled:
+            # legacy body already handled as kari_raw == filled
+            pass
+        if "kari" in filled or "hon" in filled:
+            rejected.extend(k for k in filled if k not in {"kari", "hon"} and k not in rejected)
+        kari_ok = (bool(accepted) or analogy is not None) and not malformed
+        if isinstance(kari_raw, dict) and not accepted and analogy is None and not malformed and hon is not None:
+            kari_ok = False
+        ok = (kari_ok or hon is not None) and not malformed
+        if hon_raw is not None and hon is None and not kari_ok:
+            ok = False
+        reason = "proposal" if ok else ("malformed_pm" if malformed else (hon_reason or "empty"))
         return {
             "ok": ok,
-            "reason": "proposal" if ok else ("malformed_pm" if malformed else "empty"),
+            "reason": reason,
             "qvk": {**pm_blank(), **{k: accepted[k] for k in accepted if k in QVK_SLOTS}},
             "analogy": analogy,
             "accepted": accepted,
             "rejected": rejected,
             "malformed": malformed,
             "wrote": False,
+            "kari": {"accepted": accepted, "analogy": analogy, "note": (kari_raw or {}).get("note") if isinstance(kari_raw, dict) else None} if (accepted or analogy) else None,
+            "hon": hon,
+            "hon_reason": hon_reason,
         }
 
     def export_b(self) -> dict:

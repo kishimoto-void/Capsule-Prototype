@@ -328,6 +328,73 @@ class TestBOX(unittest.TestCase):
         from BOX import LLM
         self.assertRaises(NotImplementedError, LLM().complete, "{}")
 
+    def test_start_goal_leave_middle_free(self):
+        box = _box("甲")
+        box.commit({
+            "gamma": {"project": "AXIOM", "topic": "BOX"},
+            "is": [{"field": "状態", "value": "試作2"}],
+        }, identity=1.0)
+        frozen_a = box.hash_a()
+        frozen_b = box.hash_b()
+        frame = box.generate_frame(
+            {"project": "AXIOM", "topic": "BOX"},
+            start="状態=試作2",
+            goal="今どの辺かを閉じた語で残す",
+        )
+        self.assertEqual(frame.form, "start + ? = goal")
+        self.assertEqual(frame.start, "状態=試作2")
+        self.assertEqual(frame.goal, "今どの辺かを閉じた語で残す")
+        self.assertEqual(frame.gap, {"plus": None, "minus": None})
+        self.assertIsNone(frame.kari["gap"]["plus"])
+        self.assertIsNone(frame.hon)
+        prompt = box.infer_prompt(frame)
+        self.assertIn("仮組み", prompt)
+        self.assertIn("本組", prompt)
+        self.assertEqual(box.hash_a(), frozen_a)
+        self.assertEqual(box.hash_b(), frozen_b)
+
+    def test_dual_kari_is_not_state(self):
+        box = _box("甲")
+        box.commit({
+            "gamma": {"project": "AXIOM", "topic": "BOX"},
+            "is": [{"field": "状態", "value": "試作2"}],
+        }, identity=1.0)
+        frozen_b = box.hash_b()
+        frame = box.generate_frame({"project": "AXIOM", "topic": "BOX"})
+        out = box.accept_inference(frame, {
+            "kari": {
+                "gap": {"plus": "今どこまでかだけ", "minus": "完成した和"},
+                "analogy": {
+                    "source": "状態=試作2",
+                    "plus": "進度だけ写す",
+                    "minus": "配札を混ぜるな",
+                    "onto": "gap",
+                },
+            },
+            "hon": {
+                "gamma": {"project": "AXIOM", "topic": "BOX"},
+                "is": [{"field": "結論", "value": "未完成"}],
+            },
+        })
+        self.assertTrue(out["ok"])
+        self.assertFalse(out["wrote"])
+        self.assertEqual(out["kari"]["accepted"]["gap"]["plus"], "今どこまでかだけ")
+        self.assertEqual(out["hon"]["is"][0]["value"], "未完成")
+        self.assertEqual(box.cap.is_lines({"project": "AXIOM", "topic": "BOX"}), ["状態=試作2"])
+        self.assertEqual(box.hash_b(), frozen_b)
+
+    def test_dual_hon_prose_is_not_packet(self):
+        box = _box("甲")
+        frame = box.generate_frame({"project": "AXIOM", "topic": "BOX"})
+        out = box.accept_inference(frame, {
+            "kari": {"gap": {"plus": "仮", "minus": "完成"}},
+            "hon": "完成した答え",
+        })
+        self.assertTrue(out["ok"])
+        self.assertIsNone(out["hon"])
+        self.assertEqual(out["hon_reason"], "hon_not_packet")
+        self.assertFalse(out["wrote"])
+
 
 if __name__ == "__main__":
     unittest.main()

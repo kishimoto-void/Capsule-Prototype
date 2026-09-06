@@ -32,7 +32,9 @@ python3 BOX.py
 - `bare` = α γ IS
 - `qvk` = αβγ IS。Q/V/K は空。推測は穴だけ。核にも IS にも書かない
 - 思考順は `seal → desk → start_goal → analogy → minus → plus → stop`
-- Frame は `start + ? = goal`。完成形は出さない。? は gap / analogy
+- Frame は `start + ? = goal`。start と goal は所与。間は仮組み。完成形は出さない
+- 仮組み `kari` は非保存。本組 `hon` は閉じた packet だけ。Frame から Capsule へ自動 write しない
+
 
 ## 入れないもの
 
