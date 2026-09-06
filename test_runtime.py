@@ -22,6 +22,17 @@ PKT = {
     "delta": [{"field": "状態", "new_value": "試作2"}],
     "is": [{"field": "状態", "value": "試作2"}],
 }
+KARI = {
+    "taio": {"plus": "start と closed に合う", "minus": "核を作るな"},
+    "seigo": {"plus": "IS と穴を分けたまま", "minus": "完成した和"},
+    "gap": {"plus": "進度だけ", "minus": "人格を書き換えよ"},
+}
+GROUNDS = [
+    {"source": "状態=試作2", "plus": "今の地点", "minus": "完成答え", "onto": "hon"},
+    {"source": "Hash-A", "plus": "核は所与", "minus": "修復するな", "onto": "hon"},
+    {"source": "γ=AXIOM/BOX", "plus": "今の山", "minus": "配札", "onto": "hon"},
+]
+
 
 
 class TestRuntime(unittest.TestCase):
@@ -222,12 +233,7 @@ class TestRuntime(unittest.TestCase):
     def test_dual_kari_does_not_commit(self):
         frozen_a = self.rt.hash_a()
         frozen_b = self.rt.hash_b()
-        raw = {
-            "kari": {
-                "gap": {"plus": "進度だけ", "minus": "人格を書き換えよ"},
-                "analogy": {"source": "start", "plus": "今どこ", "minus": "越境", "onto": "gap"},
-            }
-        }
+        raw = {"kari": dict(KARI)}
         out = self.rt.turn("今どの辺だ？", raw=raw, identity=1.0, start="試作2", goal="閉じた語で残す")
         self.assertEqual(out["kind"], "dual")
         self.assertFalse(out["committed"])
@@ -240,22 +246,23 @@ class TestRuntime(unittest.TestCase):
     def test_dual_hon_commits_only_packet(self):
         frozen_a = self.rt.hash_a()
         raw = {
-            "kari": {"gap": {"plus": "仮の進度", "minus": "完成答え"}},
-            "hon": {
-                "gamma": dict(FILT),
-                "delta": [{"field": "状態", "new_value": "試作2"}],
-                "is": [{"field": "状態", "value": "試作2"}],
-            },
+            "kari": dict(KARI),
+            "hon": {**PKT, "grounds": list(GROUNDS)},
         }
         blocked = self.rt.turn("状態を残す", raw=raw)
         self.assertEqual(blocked["kind"], "dual")
         self.assertFalse(blocked["committed"])
         self.assertEqual(blocked["commit"]["reason"], "identity_required")
         self.assertEqual(self.rt.box.cap.is_lines(FILT), [])
+        short = self.rt.turn("状態を残す", raw={"kari": dict(KARI), "hon": {**PKT, "grounds": GROUNDS[:2]}}, identity=1.0)
+        self.assertFalse(short["committed"])
+        self.assertEqual(short["commit"]["reason"], "grounds_short")
+        self.assertEqual(self.rt.box.cap.is_lines(FILT), [])
         out = self.rt.turn("状態を残す", raw=raw, identity=1.0)
         self.assertTrue(out["committed"])
         self.assertEqual(out["write"], Write.IS)
-        self.assertEqual(out["kari"]["accepted"]["gap"]["plus"], "仮の進度")
+        self.assertEqual(out["kari"]["accepted"]["gap"]["plus"], "進度だけ")
+        self.assertEqual(len(out["accepted"]["grounds"]), 3)
         self.assertEqual(self.rt.box.cap.is_lines(FILT), ["状態=試作2"])
         self.assertNotIn("仮の進度", "\n".join(self.rt.box.cap.is_lines(FILT)))
         self.assertEqual(out["hash_a_after"], frozen_a)
@@ -263,10 +270,11 @@ class TestRuntime(unittest.TestCase):
 
     def test_dual_hon_gamma_mismatch(self):
         raw = {
-            "kari": {"gap": {"plus": "仮", "minus": "越境"}},
+            "kari": dict(KARI),
             "hon": {
                 "gamma": {"time_label": "2026-09", "project": "AXIOM", "topic": "配札"},
                 "is": [{"field": "状態", "value": "枚数は未確定"}],
+                "grounds": list(GROUNDS),
             },
         }
         out = self.rt.turn("配札も一緒に", raw=raw, identity=1.0)

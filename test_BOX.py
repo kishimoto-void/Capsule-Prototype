@@ -348,8 +348,12 @@ class TestBOX(unittest.TestCase):
         self.assertIsNone(frame.kari["gap"]["plus"])
         self.assertIsNone(frame.hon)
         prompt = box.infer_prompt(frame)
+        self.assertIn("taio", prompt)
+        self.assertIn("seigo", prompt)
         self.assertIn("仮組み", prompt)
         self.assertIn("本組", prompt)
+        self.assertEqual(frame.kari["taio"], {"plus": None, "minus": None})
+        self.assertEqual(frame.kari["seigo"], {"plus": None, "minus": None})
         self.assertEqual(box.hash_a(), frozen_a)
         self.assertEqual(box.hash_b(), frozen_b)
 
@@ -363,6 +367,8 @@ class TestBOX(unittest.TestCase):
         frame = box.generate_frame({"project": "AXIOM", "topic": "BOX"})
         out = box.accept_inference(frame, {
             "kari": {
+                "taio": {"plus": "start=試作2 に合う", "minus": "核を作るな"},
+                "seigo": {"plus": "IS と穴を混ぜるな", "minus": "完成した和"},
                 "gap": {"plus": "今どこまでかだけ", "minus": "完成した和"},
                 "analogy": {
                     "source": "状態=試作2",
@@ -374,11 +380,19 @@ class TestBOX(unittest.TestCase):
             "hon": {
                 "gamma": {"project": "AXIOM", "topic": "BOX"},
                 "is": [{"field": "結論", "value": "未完成"}],
+                "grounds": [
+                    {"source": "状態=試作2", "plus": "今の地点", "minus": "完成答え", "onto": "hon"},
+                    {"source": "Hash-A", "plus": "核は所与", "minus": "修復するな", "onto": "hon"},
+                    {"source": "bound-gamma", "plus": "AXIOM/BOX", "minus": "配札", "onto": "hon"},
+                ],
             },
         })
         self.assertTrue(out["ok"])
         self.assertFalse(out["wrote"])
+        self.assertTrue(out["hon_ready"])
+        self.assertEqual(out["kari"]["axes"]["taio"]["plus"], "start=試作2 に合う")
         self.assertEqual(out["kari"]["accepted"]["gap"]["plus"], "今どこまでかだけ")
+        self.assertEqual(len(out["grounds"]), 3)
         self.assertEqual(out["hon"]["is"][0]["value"], "未完成")
         self.assertEqual(box.cap.is_lines({"project": "AXIOM", "topic": "BOX"}), ["状態=試作2"])
         self.assertEqual(box.hash_b(), frozen_b)
@@ -387,13 +401,56 @@ class TestBOX(unittest.TestCase):
         box = _box("甲")
         frame = box.generate_frame({"project": "AXIOM", "topic": "BOX"})
         out = box.accept_inference(frame, {
-            "kari": {"gap": {"plus": "仮", "minus": "完成"}},
+            "kari": {
+                "taio": {"plus": "仮", "minus": "核"},
+                "seigo": {"plus": "穴", "minus": "完成"},
+                "gap": {"plus": "仮", "minus": "完成"},
+            },
             "hon": "完成した答え",
         })
         self.assertTrue(out["ok"])
         self.assertIsNone(out["hon"])
         self.assertEqual(out["hon_reason"], "hon_not_packet")
         self.assertFalse(out["wrote"])
+
+    def test_kari_needs_two_fact_axes(self):
+        box = _box("甲")
+        frame = box.generate_frame({"project": "AXIOM", "topic": "BOX"})
+        short = box.accept_inference(frame, {
+            "kari": {"gap": {"plus": "仮", "minus": "完成"}},
+        })
+        self.assertFalse(short["ok"])
+        self.assertEqual(short["kari_reason"], "axes_short")
+        self.assertFalse(short["wrote"])
+
+    def test_hon_needs_three_grounds(self):
+        box = _box("甲")
+        frame = box.generate_frame({"project": "AXIOM", "topic": "BOX"})
+        raw = {
+            "kari": {
+                "taio": {"plus": "対応", "minus": "核を作る"},
+                "seigo": {"plus": "整合", "minus": "完成和"},
+            },
+            "hon": {
+                "gamma": {"project": "AXIOM", "topic": "BOX"},
+                "is": [{"field": "状態", "value": "試作2"}],
+                "grounds": [
+                    {"source": "状態=試作2", "plus": "地点", "minus": "完成", "onto": "hon"},
+                    {"source": "Hash-A", "plus": "核", "minus": "修復", "onto": "hon"},
+                ],
+            },
+        }
+        short = box.accept_inference(frame, raw)
+        self.assertFalse(short["hon_ready"])
+        self.assertEqual(short["hon_reason"], "grounds_short")
+        self.assertFalse(short["wrote"])
+        raw["hon"]["grounds"].append(
+            {"source": "γ=AXIOM/BOX", "plus": "今の山", "minus": "配札", "onto": "hon"}
+        )
+        ok = box.accept_inference(frame, raw)
+        self.assertTrue(ok["hon_ready"])
+        self.assertEqual(len(ok["grounds"]), 3)
+        self.assertFalse(ok["wrote"])
 
 
 if __name__ == "__main__":

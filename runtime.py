@@ -295,7 +295,7 @@ class Runtime:
         if kind in {"inference", "finished", "dual"}:
             accepted = self.accept_inference(pulled["frame"], raw)
             hon = accepted.get("hon") if accepted else None
-            if hon is not None:
+            if accepted and accepted.get("hon_ready") and hon is not None:
                 proposed = self.propose(hon)
                 if proposed.get("ok") and identity is not None:
                     committed = self.commit(hon, identity=identity, human=human)
@@ -308,6 +308,13 @@ class Runtime:
                         "write": Write.NONE,
                         "committed": False,
                     }
+            elif kind == "dual" and accepted and accepted.get("hon_reason"):
+                committed = {
+                    "ok": False,
+                    "reason": accepted.get("hon_reason"),
+                    "write": Write.NONE,
+                    "committed": False,
+                }
         elif proposed.get("ok") and identity is not None:
             committed = self.commit(raw, identity=identity, human=human)
         elif kind == "packet" and identity is None:

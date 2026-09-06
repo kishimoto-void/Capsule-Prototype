@@ -60,6 +60,13 @@ METHOD_STEPS = {
 
 
 FORM = "start + ? = goal"
+FACT_AXES = ("taio", "seigo")
+FACT_AXIS_HELP = {
+    "taio": "対応。start / closed / Hash-A に合うか。核は作らない。",
+    "seigo": "整合。今の IS / Δ / 穴と矛盾しないか。完成和に畳まない。",
+}
+HON_MIN_GROUNDS = 3
+
 
 
 def analogy_blank() -> dict:
@@ -71,7 +78,13 @@ def gap_blank() -> dict:
 
 
 def kari_blank() -> dict:
-    return {"gap": gap_blank(), "analogy": analogy_blank(), "note": None}
+    return {
+        "taio": gap_blank(),
+        "seigo": gap_blank(),
+        "gap": gap_blank(),
+        "analogy": analogy_blank(),
+        "note": None,
+    }
 
 
 def split_dual(filled: Any) -> tuple[Any, Any]:
@@ -81,6 +94,56 @@ def split_dual(filled: Any) -> tuple[Any, Any]:
     if "kari" in filled or "hon" in filled:
         return filled.get("kari"), filled.get("hon")
     return filled, None
+
+
+def peel_hon(hon_raw: Any, outer_grounds: Any = None) -> tuple[Any, Any]:
+    """Grounds stay outside the closed packet. parse_packet rejects extra keys."""
+    if not isinstance(hon_raw, dict):
+        return hon_raw, outer_grounds
+    grounds = hon_raw.get("grounds", outer_grounds)
+    if "packet" in hon_raw:
+        return hon_raw.get("packet"), grounds
+    if "grounds" in hon_raw:
+        return {k: v for k, v in hon_raw.items() if k != "grounds"}, grounds
+    return hon_raw, grounds
+
+
+def axis_filled(pair: Optional[dict]) -> bool:
+    if not isinstance(pair, dict):
+        return False
+    return any(str(pair.get(side) or "").strip() for side in ("plus", "minus"))
+
+
+def as_grounds(raw: Any, allowed_onto: set) -> tuple[list, str]:
+    if raw is None:
+        return [], "grounds_short"
+    if not isinstance(raw, list):
+        return [], "grounds_not_list"
+    out = []
+    seen = set()
+    bad = False
+    for row in raw:
+        item = as_analogy(row)
+        if item is None:
+            bad = True
+            continue
+        source = str(item.get("source") or "").strip()
+        if not source:
+            bad = True
+            continue
+        onto = item.get("onto")
+        if onto not in (None, "") and onto not in allowed_onto:
+            bad = True
+            continue
+        if source in seen:
+            continue
+        seen.add(source)
+        out.append(item)
+    if bad:
+        return out, "malformed_grounds"
+    if len(out) < HON_MIN_GROUNDS:
+        return out, "grounds_short"
+    return out, ""
 
 
 def as_analogy(value: Any) -> Optional[dict]:
@@ -383,9 +446,12 @@ class BOX:
                 "steps": METHOD_STEPS,
                 "rule": "start と goal は所与。間の ? は仮組み。本組は閉じた packet だけ。完成した和を書くな。住所を広げるな。Capsule に書き戻すな。",
                 "dual": {
-                    "kari": "仮組み。gap / analogy / open_slots だけ。状態ではない。",
-                    "hon": "本組。閉じた {gamma, delta, is} だけ。identity 無しでは書かない。",
+                    "kari": "仮組み。事実軸は taio と seigo の2本。状態ではない。",
+                    "hon": "本組。閉じた packet に、相異なる source の analogy 根拠を3本以上付ける。identity 無しでは書かない。",
                 },
+                "fact_axes": FACT_AXIS_HELP,
+                "kari_need": list(FACT_AXES),
+                "hon_need": {"grounds": HON_MIN_GROUNDS},
                 "plus": "start から goal へ足すもの",
                 "minus": "start から goal へ引くもの・写してはいけないもの",
                 "analogy": "start / closed の既知を gap へ写す。onto は gap か open_slots。",
@@ -419,13 +485,23 @@ class BOX:
         if not isinstance(filled, dict):
             return {"ok": False, "reason": "bad_inference", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None}
         kari_raw, hon_raw = split_dual(filled)
-        hon = parse_packet(hon_raw) if hon_raw is not None else None
+        dual = "kari" in filled or "hon" in filled
+        pkt_raw, grounds_raw = peel_hon(hon_raw, filled.get("grounds") if dual else None)
+        hon = parse_packet(pkt_raw) if pkt_raw is not None else None
         hon_reason = ""
         if hon_raw is not None and hon is None:
             hon_reason = "hon_not_packet"
         if kari_raw is None and hon is None and hon_raw is None:
-            return {"ok": False, "reason": "empty", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None}
-        allowed = set(frame.open_slots) | set(frame.qvk) | {"gap"}
+            return {"ok": False, "reason": "empty", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None, "grounds": [], "hon_ready": False}
+        allowed = set(frame.open_slots) | set(frame.qvk) | {"gap"} | set(FACT_AXES)
+        onto_ok = set(allowed) | {"hon", "gap"}
+        grounds, grounds_reason = as_grounds(grounds_raw, onto_ok) if (dual and hon_raw is not None) else ([], "")
+        if hon is not None and dual:
+            if grounds_reason:
+                hon_reason = grounds_reason
+            elif len(grounds) < HON_MIN_GROUNDS:
+                hon_reason = "grounds_short"
+        hon_ready = hon is not None and len(grounds) >= HON_MIN_GROUNDS and not grounds_reason
         accepted = {}
         malformed = []
         analogy = None
@@ -449,18 +525,26 @@ class BOX:
             rejected = [k for k in kari_raw if k not in allowed and k not in {"analogy", "note"}]
         elif kari_raw is not None:
             malformed.append("kari")
-        if not isinstance(filled.get("kari"), dict) and "kari" not in filled and "hon" not in filled:
-            # legacy body already handled as kari_raw == filled
-            pass
         if "kari" in filled or "hon" in filled:
-            rejected.extend(k for k in filled if k not in {"kari", "hon"} and k not in rejected)
-        kari_ok = (bool(accepted) or analogy is not None) and not malformed
+            rejected.extend(k for k in filled if k not in {"kari", "hon", "grounds"} and k not in rejected)
+        axes_ok = all(axis_filled(accepted.get(name)) for name in FACT_AXES)
+        if dual:
+            kari_ok = axes_ok and not malformed
+            if not axes_ok and not malformed:
+                kari_reason = "axes_short"
+            else:
+                kari_reason = ""
+        else:
+            kari_ok = (bool(accepted) or analogy is not None) and not malformed
+            kari_reason = ""
         if isinstance(kari_raw, dict) and not accepted and analogy is None and not malformed and hon is not None:
             kari_ok = False
-        ok = (kari_ok or hon is not None) and not malformed
-        if hon_raw is not None and hon is None and not kari_ok:
+        ok = (kari_ok or hon_ready or (hon is not None and not dual)) and not malformed
+        if hon_raw is not None and not hon_ready and not kari_ok:
             ok = False
-        reason = "proposal" if ok else ("malformed_pm" if malformed else (hon_reason or "empty"))
+        if dual and not kari_ok and not hon_ready:
+            ok = False
+        reason = "proposal" if ok else ("malformed_pm" if malformed else (kari_reason or hon_reason or "empty"))
         return {
             "ok": ok,
             "reason": reason,
@@ -470,9 +554,12 @@ class BOX:
             "rejected": rejected,
             "malformed": malformed,
             "wrote": False,
-            "kari": {"accepted": accepted, "analogy": analogy, "note": (kari_raw or {}).get("note") if isinstance(kari_raw, dict) else None} if (accepted or analogy) else None,
-            "hon": hon,
+            "kari": {"accepted": accepted, "analogy": analogy, "axes": {name: accepted.get(name) for name in FACT_AXES}, "note": (kari_raw or {}).get("note") if isinstance(kari_raw, dict) else None} if (accepted or analogy) else None,
+            "hon": hon if hon_ready else (None if dual else hon),
             "hon_reason": hon_reason,
+            "grounds": grounds,
+            "hon_ready": hon_ready,
+            "kari_reason": kari_reason,
         }
 
     def export_b(self) -> dict:
