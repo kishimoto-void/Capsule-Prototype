@@ -62,10 +62,18 @@ METHOD_STEPS = {
 FORM = "start + ? = goal"
 FACT_AXES = ("taio", "seigo")
 FACT_AXIS_HELP = {
-    "taio": "対応。start / closed / Hash-A に合うか。核は作らない。",
-    "seigo": "整合。今の IS / Δ / 穴と矛盾しないか。完成和に畳まない。",
+    "taio": "対応。cite は kernel / address。start / closed / Hash-A に合うか。核は作らない。",
+    "seigo": "整合。cite は state。今の IS / Δ / start と矛盾しないか。完成和に畳まない。",
 }
 HON_MIN_GROUNDS = 3
+GROUND_CLASSES = ("kernel", "state", "address")
+AXIS_CITE_CLASS = {
+    "taio": frozenset({"kernel", "address"}),
+    "seigo": frozenset({"state"}),
+}
+KERNEL_TAGS = frozenset({"alpha", "beta", "hash_a", "hash-a", "核"})
+STATE_TAGS = frozenset({"is", "delta", "start", "状態"})
+ADDRESS_TAGS = frozenset({"gamma", "goal", "address", "γ"})
 
 
 
@@ -77,14 +85,98 @@ def gap_blank() -> dict:
     return {"plus": None, "minus": None}
 
 
+def axis_blank() -> dict:
+    return {"plus": None, "minus": None, "cite": None}
+
+
 def kari_blank() -> dict:
     return {
-        "taio": gap_blank(),
-        "seigo": gap_blank(),
+        "taio": axis_blank(),
+        "seigo": axis_blank(),
         "gap": gap_blank(),
         "analogy": analogy_blank(),
         "note": None,
     }
+
+
+def _add_text(bag: set, value: Any) -> None:
+    if isinstance(value, str):
+        text = value.strip()
+        if len(text) >= 2:
+            bag.add(text)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _add_text(bag, key)
+            _add_text(bag, item)
+        return
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _add_text(bag, item)
+
+
+def frame_catalog(frame: "Frame") -> dict:
+    kernel, state, address = set(), set(), set()
+    kernel.update(KERNEL_TAGS)
+    state.update(STATE_TAGS)
+    address.update(ADDRESS_TAGS)
+    if frame.hash_a:
+        kernel.add(frame.hash_a)
+        kernel.add(frame.hash_a[:16])
+    _add_text(kernel, frame.constraints)
+    _add_text(state, frame.state)
+    _add_text(state, frame.changes)
+    _add_text(state, frame.start)
+    _add_text(address, frame.context)
+    _add_text(address, frame.goal)
+    _add_text(address, frame.purpose)
+    closed = set(frame.closed or ())
+    if "alpha" not in closed:
+        kernel -= {"alpha"}
+    if "beta" not in closed:
+        kernel -= {"beta", "核"}
+    if "is" not in closed and "delta" not in closed:
+        state -= {"is", "delta", "状態"}
+    if "gamma" not in closed:
+        address -= {"gamma", "γ", "address"}
+    return {
+        "kernel": kernel,
+        "state": state,
+        "address": address,
+        "all": kernel | state | address,
+    }
+
+
+def cite_class(cite: Any, catalog: dict) -> Optional[str]:
+    text = str(cite or "").strip()
+    if not text:
+        return None
+    bags = (
+        ("kernel", catalog.get("kernel", set())),
+        ("state", catalog.get("state", set())),
+        ("address", catalog.get("address", set())),
+    )
+    for kind, bag in bags:
+        if text in bag:
+            return kind
+    low = text.lower()
+    for kind, bag in bags:
+        if any(low == str(token).lower() for token in bag):
+            return kind
+    return None
+
+
+def as_pm(value: Any) -> Optional[dict]:
+    if not isinstance(value, dict):
+        return None
+    if set(value) - {"plus", "minus", "cite"}:
+        return None
+    if "plus" not in value or "minus" not in value:
+        return None
+    out = {"plus": value.get("plus"), "minus": value.get("minus")}
+    if "cite" in value:
+        out["cite"] = value.get("cite")
+    return out
 
 
 def split_dual(filled: Any) -> tuple[Any, Any]:
@@ -111,36 +203,53 @@ def peel_hon(hon_raw: Any, outer_grounds: Any = None) -> tuple[Any, Any]:
 def axis_filled(pair: Optional[dict]) -> bool:
     if not isinstance(pair, dict):
         return False
-    return any(str(pair.get(side) or "").strip() for side in ("plus", "minus"))
+    plus = str(pair.get("plus") or "").strip()
+    minus = str(pair.get("minus") or "").strip()
+    return bool(plus and minus)
 
 
-def as_grounds(raw: Any, allowed_onto: set) -> tuple[list, str]:
+def as_grounds(raw: Any, allowed_onto: set, catalog: Optional[dict] = None) -> tuple[list, str]:
     if raw is None:
         return [], "grounds_short"
     if not isinstance(raw, list):
         return [], "grounds_not_list"
     out = []
     seen = set()
+    classes = set()
     bad = False
+    unbound = False
     for row in raw:
         item = as_analogy(row)
         if item is None:
             bad = True
             continue
         source = str(item.get("source") or "").strip()
-        if not source:
+        plus = str(item.get("plus") or "").strip()
+        minus = str(item.get("minus") or "").strip()
+        if not source or not plus or not minus:
             bad = True
             continue
         onto = item.get("onto")
         if onto not in (None, "") and onto not in allowed_onto:
             bad = True
             continue
+        kind = cite_class(source, catalog or {}) if catalog is not None else "free"
+        if catalog is not None and kind is None:
+            unbound = True
+            continue
         if source in seen:
             continue
         seen.add(source)
+        item = {**item, "class": kind}
+        if kind:
+            classes.add(kind)
         out.append(item)
     if bad:
         return out, "malformed_grounds"
+    if unbound:
+        return out, "cite_unbound"
+    if catalog is not None and not set(GROUND_CLASSES) <= classes:
+        return out, "grounds_class_short"
     if len(out) < HON_MIN_GROUNDS:
         return out, "grounds_short"
     return out, ""
@@ -159,11 +268,14 @@ def as_analogy(value: Any) -> Optional[dict]:
 def as_pm(value: Any) -> Optional[dict]:
     if not isinstance(value, dict):
         return None
-    if set(value) - {"plus", "minus"}:
+    if set(value) - {"plus", "minus", "cite"}:
         return None
     if "plus" not in value or "minus" not in value:
         return None
-    return {"plus": value.get("plus"), "minus": value.get("minus")}
+    out = {"plus": value.get("plus"), "minus": value.get("minus")}
+    if "cite" in value:
+        out["cite"] = value.get("cite")
+    return out
 
 
 @dataclass
@@ -208,6 +320,7 @@ class Frame:
             "gap": dict(self.gap) if self.gap else gap_blank(),
             "kari": dict(self.kari) if self.kari else kari_blank(),
             "hon": self.hon,
+            "cites": {key: sorted(frame_catalog(self)[key]) for key in GROUND_CLASSES},
             "method": list(METHOD),
             "hash_a": self.hash_a,
             "hash_b": self.hash_b,
@@ -446,12 +559,13 @@ class BOX:
                 "steps": METHOD_STEPS,
                 "rule": "start と goal は所与。間の ? は仮組み。本組は閉じた packet だけ。完成した和を書くな。住所を広げるな。Capsule に書き戻すな。",
                 "dual": {
-                    "kari": "仮組み。事実軸は taio と seigo の2本。状態ではない。",
-                    "hon": "本組。閉じた packet に、相異なる source の analogy 根拠を3本以上付ける。identity 無しでは書かない。",
+                    "kari": "仮組み。taio と seigo。各軸は plus/minus/cite。cite は cites から取る。",
+                    "hon": "本組。閉じた packet に、kernel / state / address 各1本以上の根拠。source は cites から。",
                 },
                 "fact_axes": FACT_AXIS_HELP,
                 "kari_need": list(FACT_AXES),
-                "hon_need": {"grounds": HON_MIN_GROUNDS},
+                "hon_need": {"grounds": HON_MIN_GROUNDS, "classes": list(GROUND_CLASSES)},
+                "cites": {key: sorted(frame_catalog(frame)[key]) for key in GROUND_CLASSES},
                 "plus": "start から goal へ足すもの",
                 "minus": "start から goal へ引くもの・写してはいけないもの",
                 "analogy": "start / closed の既知を gap へ写す。onto は gap か open_slots。",
@@ -484,6 +598,10 @@ class BOX:
                 return {"ok": False, "reason": "bad_inference", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None}
         if not isinstance(filled, dict):
             return {"ok": False, "reason": "bad_inference", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None}
+        if not frame.intact:
+            return {"ok": False, "reason": "integrity_failure", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None, "hon_ready": False}
+        if frame.hash_a and frame.hash_a != self.hash_a():
+            return {"ok": False, "reason": "frame_stale", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None, "hon_ready": False}
         kari_raw, hon_raw = split_dual(filled)
         dual = "kari" in filled or "hon" in filled
         pkt_raw, grounds_raw = peel_hon(hon_raw, filled.get("grounds") if dual else None)
@@ -493,9 +611,10 @@ class BOX:
             hon_reason = "hon_not_packet"
         if kari_raw is None and hon is None and hon_raw is None:
             return {"ok": False, "reason": "empty", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None, "grounds": [], "hon_ready": False}
+        catalog = frame_catalog(frame)
         allowed = set(frame.open_slots) | set(frame.qvk) | {"gap"} | set(FACT_AXES)
         onto_ok = set(allowed) | {"hon", "gap"}
-        grounds, grounds_reason = as_grounds(grounds_raw, onto_ok) if (dual and hon_raw is not None) else ([], "")
+        grounds, grounds_reason = as_grounds(grounds_raw, onto_ok, catalog=catalog) if (dual and hon_raw is not None) else ([], "")
         if hon is not None and dual:
             if grounds_reason:
                 hon_reason = grounds_reason
@@ -528,15 +647,20 @@ class BOX:
         if "kari" in filled or "hon" in filled:
             rejected.extend(k for k in filled if k not in {"kari", "hon", "grounds"} and k not in rejected)
         axes_ok = all(axis_filled(accepted.get(name)) for name in FACT_AXES)
+        kari_reason = ""
         if dual:
-            kari_ok = axes_ok and not malformed
-            if not axes_ok and not malformed:
+            if not axes_ok:
                 kari_reason = "axes_short"
             else:
-                kari_reason = ""
+                for name in FACT_AXES:
+                    kind = cite_class((accepted.get(name) or {}).get("cite"), catalog)
+                    if kind not in AXIS_CITE_CLASS[name]:
+                        axes_ok = False
+                        kari_reason = "cite_unbound" if kind is None else "cite_class"
+                        break
+            kari_ok = axes_ok and not malformed
         else:
             kari_ok = (bool(accepted) or analogy is not None) and not malformed
-            kari_reason = ""
         if isinstance(kari_raw, dict) and not accepted and analogy is None and not malformed and hon is not None:
             kari_ok = False
         ok = (kari_ok or hon_ready or (hon is not None and not dual)) and not malformed

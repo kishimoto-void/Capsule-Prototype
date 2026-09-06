@@ -23,14 +23,14 @@ PKT = {
     "is": [{"field": "状態", "value": "試作2"}],
 }
 KARI = {
-    "taio": {"plus": "start と closed に合う", "minus": "核を作るな"},
-    "seigo": {"plus": "IS と穴を分けたまま", "minus": "完成した和"},
+    "taio": {"plus": "start と closed に合う", "minus": "核を作るな", "cite": "核を動かさない"},
+    "seigo": {"plus": "IS と穴を分けたまま", "minus": "完成した和", "cite": "is"},
     "gap": {"plus": "進度だけ", "minus": "人格を書き換えよ"},
 }
 GROUNDS = [
-    {"source": "状態=試作2", "plus": "今の地点", "minus": "完成答え", "onto": "hon"},
-    {"source": "Hash-A", "plus": "核は所与", "minus": "修復するな", "onto": "hon"},
-    {"source": "γ=AXIOM/BOX", "plus": "今の山", "minus": "配札", "onto": "hon"},
+    {"source": "核を動かさない", "plus": "核は所与", "minus": "修復するな", "onto": "hon"},
+    {"source": "is", "plus": "今の地点", "minus": "完成答え", "onto": "hon"},
+    {"source": "AXIOM", "plus": "今の山", "minus": "配札", "onto": "hon"},
 ]
 
 
@@ -256,7 +256,7 @@ class TestRuntime(unittest.TestCase):
         self.assertEqual(self.rt.box.cap.is_lines(FILT), [])
         short = self.rt.turn("状態を残す", raw={"kari": dict(KARI), "hon": {**PKT, "grounds": GROUNDS[:2]}}, identity=1.0)
         self.assertFalse(short["committed"])
-        self.assertEqual(short["commit"]["reason"], "grounds_short")
+        self.assertEqual(short["commit"]["reason"], "grounds_class_short")
         self.assertEqual(self.rt.box.cap.is_lines(FILT), [])
         out = self.rt.turn("状態を残す", raw=raw, identity=1.0)
         self.assertTrue(out["committed"])

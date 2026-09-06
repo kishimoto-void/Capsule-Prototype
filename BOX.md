@@ -33,8 +33,9 @@ python3 BOX.py
 - `qvk` = αβγ IS。Q/V/K は空。推測は穴だけ。核にも IS にも書かない
 - 思考順は `seal → desk → start_goal → analogy → minus → plus → stop`
 - Frame は `start + ? = goal`。start と goal は所与。間は仮組み。完成形は出さない
-- 仮組みは事実軸 2 本（対応 `taio` / 整合 `seigo`）。非保存
-- 本組は閉じた packet に、相異なる source の analogy 根拠を 3 本以上。Frame から Capsule へ自動 write しない
+- 仮組みは事実軸 2 本（対応 `taio` / 整合 `seigo`）。各軸は plus / minus / cite。cite は Frame.cites だけ
+- 本組は閉じた packet に、kernel / state / address 各1本以上の analogy 根拠。source は cites から。Frame から Capsule へ自動 write しない
+
 
 
 
