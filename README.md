@@ -22,6 +22,7 @@ IS     正の確定だけ。最大3行。不知は書かない。語は上書き
 Gate   いまは書き込み政策のみ。生成文は見ていない
 Render 見える世界
 LLM    次トークン予測のまま。アルゴリズムは変えない
+Runtime bind / pull / infer / propose / commit。核ではない
 ```
 
 α は法律ではない。Gate は生成文を α と照合しない。
@@ -34,7 +35,8 @@ LLM    次トークン予測のまま。アルゴリズムは変えない
 ## 動かす
 
 ```bash
-python3 -m unittest test_axiom_min3.py test_BOX.py
+python3 -m unittest test_axiom_min3.py test_BOX.py test_runtime.py
+python3 runtime.py
 ```
 
 | ファイル | 役割 |
@@ -44,11 +46,13 @@ python3 -m unittest test_axiom_min3.py test_BOX.py
 | `test_axiom_min3.py` | min3 単体 |
 | `BOX.py` | 着脱面。Hash-B、換装、不全 Frame（start + ? = goal） |
 | `test_BOX.py` | BOX 単体 |
-| `phase3_gamma_history.py` | 同一 Δ 山の B / M2 / M3 は本プロトタイプでは M3 のみ |
-| `capsule_scope_experiment.py` | 混在山を γ で切る機械実験 |
-| `BOX.py` | 着脱面。Hash-B と換装。核ではない |
+| `runtime.py` | 薄い経路。BOX の上。核ではない |
+| `test_runtime.py` | Runtime 耐圧。毎ターン Hash-A 不変 |
+| `phase3_prototype.py` | Baseline 全載せと min3 Render の比較 |
 
-`phase3_gamma_history.py` は親リポジトリの比較スクリプトを同梱する。min2 が無い場合は M3 と Baseline だけ見る。
+Runtime の生成器は `Callable[[str], str]`。既定は stub。API は足していない。  
+bind した γ 以外の packet は commit しない。推論埋めは Capsule に書かない。  
+Hash-A が壊れていれば生成器を呼ばない。修復しない。
 
 ---
 
@@ -57,6 +61,7 @@ python3 -m unittest test_axiom_min3.py test_BOX.py
 1. IS は語ごとに上書きする。同じ語の旧行はスロットを食わない。
 2. 4語目が来たら、ピン以外の最古を落とす。ピンは `状態`。
 3. `ingest` の `evicted` は監査。記憶層ではない。
+4. Runtime は経路だけ。Hash-A を観察から書かない。
 
 IS_MAX=3 は据え置き。Render は IS だけ。Δ を見える世界に混ぜない。
 
@@ -69,3 +74,4 @@ IS_MAX=3 は据え置き。Render は IS だけ。Δ を見える世界に混ぜ
 - ハルシネーション全般
 - α が法律として強制されること
 - カーネル配置
+- 実 LLM API 接続後の口調維持
