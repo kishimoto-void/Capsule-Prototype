@@ -35,7 +35,7 @@ Runtime bind / pull / infer / propose / commit。核ではない
 ## 動かす
 
 ```bash
-python3 -m unittest test_axiom_min3.py test_BOX.py test_runtime.py
+python3 -m unittest test_axiom_min3.py test_BOX.py test_runtime.py test_jitsuyo.py
 python3 runtime.py
 ```
 
@@ -48,6 +48,7 @@ python3 runtime.py
 | `test_BOX.py` | BOX 単体 |
 | `runtime.py` | 薄い経路。BOX の上。核ではない |
 | `test_runtime.py` | Runtime 耐圧。毎ターン Hash-A 不変 |
+| `test_jitsuyo.py` | 実用層。向きは本組だけ。状態にならない |
 | `phase3_prototype.py` | Baseline 全載せと min3 Render の比較 |
 
 Runtime の生成器は `Callable[[str], str]`。既定は stub。API は足していない。  
