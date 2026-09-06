@@ -385,11 +385,13 @@ class TestBOX(unittest.TestCase):
                     {"source": "状態=試作2", "plus": "今の地点", "minus": "完成答え", "onto": "hon"},
                     {"source": "AXIOM", "plus": "今の山", "minus": "配札", "onto": "hon"},
                 ],
+                "jitsuyo": {"toward": "閉じた語で残す", "not": "配札へ越境するな", "cite": "AXIOM"},
             },
         })
         self.assertTrue(out["ok"])
         self.assertFalse(out["wrote"])
         self.assertTrue(out["hon_ready"])
+        self.assertEqual(out["jitsuyo"]["toward"], "閉じた語で残す")
         self.assertEqual(out["kari"]["axes"]["taio"]["plus"], "start=試作2 に合う")
         self.assertEqual(out["kari"]["accepted"]["gap"]["plus"], "今どこまでかだけ")
         self.assertEqual(len(out["grounds"]), 3)
@@ -447,9 +449,40 @@ class TestBOX(unittest.TestCase):
         raw["hon"]["grounds"].append(
             {"source": "AXIOM", "plus": "今の山", "minus": "配札", "onto": "hon"}
         )
+        still = box.accept_inference(frame, raw)
+        self.assertFalse(still["hon_ready"])
+        self.assertEqual(still["hon_reason"], "jitsuyo_required")
+        raw["hon"]["jitsuyo"] = {"toward": "閉じた語で残す", "not": "核を動かすな", "cite": "AXIOM"}
         ok = box.accept_inference(frame, raw)
         self.assertTrue(ok["hon_ready"])
-        self.assertEqual(len(ok["grounds"]), 3)
+        self.assertEqual(ok["jitsuyo"]["class"], "address")
+        self.assertFalse(ok["wrote"])
+
+    def test_jitsuyo_faces_address(self):
+        box = _box("甲")
+        frame = box.generate_frame({"project": "AXIOM", "topic": "BOX"})
+        raw = {
+            "kari": {
+                "taio": {"plus": "対応", "minus": "核を作る", "cite": "核を動かさない"},
+                "seigo": {"plus": "整合", "minus": "完成和", "cite": "is"},
+            },
+            "hon": {
+                "gamma": {"project": "AXIOM", "topic": "BOX"},
+                "is": [{"field": "状態", "value": "試作2"}],
+                "grounds": [
+                    {"source": "核を動かさない", "plus": "核", "minus": "修復", "onto": "hon"},
+                    {"source": "is", "plus": "地点", "minus": "完成", "onto": "hon"},
+                    {"source": "AXIOM", "plus": "今の山", "minus": "配札", "onto": "hon"},
+                ],
+                "jitsuyo": {"toward": "残す", "not": "越境", "cite": "核を動かさない"},
+            },
+        }
+        bad = box.accept_inference(frame, raw)
+        self.assertFalse(bad["hon_ready"])
+        self.assertEqual(bad["hon_reason"], "jitsuyo_class")
+        raw["hon"]["jitsuyo"]["cite"] = "AXIOM"
+        ok = box.accept_inference(frame, raw)
+        self.assertTrue(ok["hon_ready"])
         self.assertFalse(ok["wrote"])
 
     def test_cite_must_bind_frame(self):

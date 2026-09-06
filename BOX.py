@@ -74,6 +74,8 @@ AXIS_CITE_CLASS = {
 KERNEL_TAGS = frozenset({"alpha", "beta", "hash_a", "hash-a", "核"})
 STATE_TAGS = frozenset({"is", "delta", "start", "状態"})
 ADDRESS_TAGS = frozenset({"gamma", "goal", "address", "γ"})
+HON_META = ("grounds", "jitsuyo")
+
 
 
 
@@ -87,6 +89,30 @@ def gap_blank() -> dict:
 
 def axis_blank() -> dict:
     return {"plus": None, "minus": None, "cite": None}
+
+
+def jitsuyo_blank() -> dict:
+    return {"toward": None, "not": None, "cite": None}
+
+
+def as_jitsuyo(raw: Any, catalog: dict) -> tuple[Optional[dict], str]:
+    """Pragmatic heading for hon only. Not state. cite must be address."""
+    if raw is None:
+        return None, "jitsuyo_required"
+    if not isinstance(raw, dict) or set(raw) - {"toward", "not", "cite"}:
+        return None, "jitsuyo_bad"
+    toward = str(raw.get("toward") or "").strip()
+    avoid = str(raw.get("not") or "").strip()
+    cite = raw.get("cite")
+    if not toward or not avoid or not str(cite or "").strip():
+        return None, "jitsuyo_short"
+    kind = cite_class(cite, catalog)
+    if kind is None:
+        return None, "jitsuyo_unbound"
+    if kind != "address":
+        return None, "jitsuyo_class"
+    return {"toward": toward, "not": avoid, "cite": cite, "class": kind}, ""
+
 
 
 def kari_blank() -> dict:
@@ -188,16 +214,16 @@ def split_dual(filled: Any) -> tuple[Any, Any]:
     return filled, None
 
 
-def peel_hon(hon_raw: Any, outer_grounds: Any = None) -> tuple[Any, Any]:
-    """Grounds stay outside the closed packet. parse_packet rejects extra keys."""
+def peel_hon(hon_raw: Any, outer_grounds: Any = None, outer_jitsuyo: Any = None) -> tuple[Any, Any, Any]:
+    """Grounds and jitsuyo stay outside the closed packet."""
     if not isinstance(hon_raw, dict):
-        return hon_raw, outer_grounds
+        return hon_raw, outer_grounds, outer_jitsuyo
     grounds = hon_raw.get("grounds", outer_grounds)
+    jitsuyo = hon_raw.get("jitsuyo", outer_jitsuyo)
     if "packet" in hon_raw:
-        return hon_raw.get("packet"), grounds
-    if "grounds" in hon_raw:
-        return {k: v for k, v in hon_raw.items() if k != "grounds"}, grounds
-    return hon_raw, grounds
+        return hon_raw.get("packet"), grounds, jitsuyo
+    extra = {k: v for k, v in hon_raw.items() if k not in HON_META}
+    return extra, grounds, jitsuyo
 
 
 def axis_filled(pair: Optional[dict]) -> bool:
@@ -320,6 +346,7 @@ class Frame:
             "gap": dict(self.gap) if self.gap else gap_blank(),
             "kari": dict(self.kari) if self.kari else kari_blank(),
             "hon": self.hon,
+            "jitsuyo": jitsuyo_blank(),
             "cites": {key: sorted(frame_catalog(self)[key]) for key in GROUND_CLASSES},
             "method": list(METHOD),
             "hash_a": self.hash_a,
@@ -560,11 +587,13 @@ class BOX:
                 "rule": "start と goal は所与。間の ? は仮組み。本組は閉じた packet だけ。完成した和を書くな。住所を広げるな。Capsule に書き戻すな。",
                 "dual": {
                     "kari": "仮組み。taio と seigo。各軸は plus/minus/cite。cite は cites から取る。",
-                    "hon": "本組。閉じた packet に、kernel / state / address 各1本以上の根拠。source は cites から。",
+                    "hon": "本組。閉じた packet + kernel/state/address 根拠 + jitsuyo（toward/not/cite）。cite は address。向きは状態ではない。",
                 },
                 "fact_axes": FACT_AXIS_HELP,
                 "kari_need": list(FACT_AXES),
-                "hon_need": {"grounds": HON_MIN_GROUNDS, "classes": list(GROUND_CLASSES)},
+                "hon_need": {"grounds": HON_MIN_GROUNDS, "classes": list(GROUND_CLASSES), "jitsuyo": ["toward", "not", "cite"]},
+                "jitsuyo": "実用の向き。toward は goal 側。not は越境・核改変。cite は address。Capsule に書かない。",
+                "jitsuyo_blank": jitsuyo_blank(),
                 "cites": {key: sorted(frame_catalog(frame)[key]) for key in GROUND_CLASSES},
                 "plus": "start から goal へ足すもの",
                 "minus": "start から goal へ引くもの・写してはいけないもの",
@@ -604,7 +633,11 @@ class BOX:
             return {"ok": False, "reason": "frame_stale", "qvk": dict(frame.qvk), "wrote": False, "kari": None, "hon": None, "hon_ready": False}
         kari_raw, hon_raw = split_dual(filled)
         dual = "kari" in filled or "hon" in filled
-        pkt_raw, grounds_raw = peel_hon(hon_raw, filled.get("grounds") if dual else None)
+        pkt_raw, grounds_raw, jitsuyo_raw = peel_hon(
+            hon_raw,
+            filled.get("grounds") if dual else None,
+            filled.get("jitsuyo") if dual else None,
+        )
         hon = parse_packet(pkt_raw) if pkt_raw is not None else None
         hon_reason = ""
         if hon_raw is not None and hon is None:
@@ -615,12 +648,17 @@ class BOX:
         allowed = set(frame.open_slots) | set(frame.qvk) | {"gap"} | set(FACT_AXES)
         onto_ok = set(allowed) | {"hon", "gap"}
         grounds, grounds_reason = as_grounds(grounds_raw, onto_ok, catalog=catalog) if (dual and hon_raw is not None) else ([], "")
+        heading, heading_reason = (None, "")
+        if dual and hon_raw is not None and hon is not None:
+            heading, heading_reason = as_jitsuyo(jitsuyo_raw, catalog)
         if hon is not None and dual:
             if grounds_reason:
                 hon_reason = grounds_reason
+            elif heading_reason:
+                hon_reason = heading_reason
             elif len(grounds) < HON_MIN_GROUNDS:
                 hon_reason = "grounds_short"
-        hon_ready = hon is not None and len(grounds) >= HON_MIN_GROUNDS and not grounds_reason
+        hon_ready = hon is not None and len(grounds) >= HON_MIN_GROUNDS and not grounds_reason and heading is not None
         accepted = {}
         malformed = []
         analogy = None
@@ -645,7 +683,7 @@ class BOX:
         elif kari_raw is not None:
             malformed.append("kari")
         if "kari" in filled or "hon" in filled:
-            rejected.extend(k for k in filled if k not in {"kari", "hon", "grounds"} and k not in rejected)
+            rejected.extend(k for k in filled if k not in {"kari", "hon", "grounds", "jitsuyo"} and k not in rejected)
         axes_ok = all(axis_filled(accepted.get(name)) for name in FACT_AXES)
         kari_reason = ""
         if dual:
@@ -682,6 +720,7 @@ class BOX:
             "hon": hon if hon_ready else (None if dual else hon),
             "hon_reason": hon_reason,
             "grounds": grounds,
+            "jitsuyo": heading,
             "hon_ready": hon_ready,
             "kari_reason": kari_reason,
         }

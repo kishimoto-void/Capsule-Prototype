@@ -32,6 +32,8 @@ GROUNDS = [
     {"source": "is", "plus": "今の地点", "minus": "完成答え", "onto": "hon"},
     {"source": "AXIOM", "plus": "今の山", "minus": "配札", "onto": "hon"},
 ]
+JITSUYO = {"toward": "閉じた語で残す", "not": "配札へ越境するな", "cite": "AXIOM"}
+
 
 
 
@@ -247,7 +249,7 @@ class TestRuntime(unittest.TestCase):
         frozen_a = self.rt.hash_a()
         raw = {
             "kari": dict(KARI),
-            "hon": {**PKT, "grounds": list(GROUNDS)},
+            "hon": {**PKT, "grounds": list(GROUNDS), "jitsuyo": dict(JITSUYO)},
         }
         blocked = self.rt.turn("状態を残す", raw=raw)
         self.assertEqual(blocked["kind"], "dual")
@@ -260,6 +262,8 @@ class TestRuntime(unittest.TestCase):
         self.assertEqual(self.rt.box.cap.is_lines(FILT), [])
         out = self.rt.turn("状態を残す", raw=raw, identity=1.0)
         self.assertTrue(out["committed"])
+        self.assertEqual(out["accepted"]["jitsuyo"]["cite"], "AXIOM")
+        self.assertNotIn("閉じた語で残す", "\n".join(self.rt.box.cap.is_lines(FILT)))
         self.assertEqual(out["write"], Write.IS)
         self.assertEqual(out["kari"]["accepted"]["gap"]["plus"], "進度だけ")
         self.assertEqual(len(out["accepted"]["grounds"]), 3)
@@ -275,6 +279,7 @@ class TestRuntime(unittest.TestCase):
                 "gamma": {"time_label": "2026-09", "project": "AXIOM", "topic": "配札"},
                 "is": [{"field": "状態", "value": "枚数は未確定"}],
                 "grounds": list(GROUNDS),
+                "jitsuyo": dict(JITSUYO),
             },
         }
         out = self.rt.turn("配札も一緒に", raw=raw, identity=1.0)

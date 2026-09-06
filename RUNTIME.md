@@ -30,7 +30,9 @@ start + 仮組み(?) = goal     非保存
 仮組みは状態にならない。本組も identity と bound γ と根拠3本を通らなければ書かない。
 
 仮組みに求めるもの: 事実軸 2 本（対応 / 整合）。cite は Frame の既知だけ
-本組に求めるもの: 閉じた packet + kernel / state / address の根拠を各1本以上
+本組に求めるもの: 閉じた packet + kernel / state / address の根拠 + 実用の向き（address を向く）
+向きは残らない。残るのは閉じた語だけ
+
 古い Frame（Hash-A 不一致）と壊れた核は accept しない
 
 

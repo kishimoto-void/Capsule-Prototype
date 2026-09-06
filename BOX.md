@@ -34,7 +34,8 @@ python3 BOX.py
 - 思考順は `seal → desk → start_goal → analogy → minus → plus → stop`
 - Frame は `start + ? = goal`。start と goal は所与。間は仮組み。完成形は出さない
 - 仮組みは事実軸 2 本（対応 `taio` / 整合 `seigo`）。各軸は plus / minus / cite。cite は Frame.cites だけ
-- 本組は閉じた packet に、kernel / state / address 各1本以上の analogy 根拠。source は cites から。Frame から Capsule へ自動 write しない
+- 本組は閉じた packet に、kernel / state / address 各1本以上の根拠と、実用の向き `jitsuyo`（toward / not / cite=address）。向きは状態ではない
+
 
 
 
