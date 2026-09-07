@@ -50,6 +50,7 @@ python3 runtime.py
 | `test_runtime.py` | Runtime 耐圧。毎ターン Hash-A 不変 |
 | `test_jitsuyo.py` | 実用層。向きは本組だけ。状態にならない |
 | `phase3_prototype.py` | Baseline 全載せと min3 Render の比較 |
+| `GROK.md` | Grok / LLM の取り扱い。生成は権限ではない |
 
 Runtime の生成器は `Callable[[str], str]`。既定は stub。API は足していない。  
 bind した γ 以外の packet は commit しない。推論埋めは Capsule に書かない。  
